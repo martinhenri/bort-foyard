@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Chronomètre Bort Foyard – Anti-triche</title>
+    <style>
+      @import url("https://fonts.googleapis.com/css2?family=Pirata+One&family=IM+Fell+English+SC&display=swap");
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        font-family: "IM Fell English SC", serif;
+        background: radial-gradient(circle at 30% 20%, #4d2f12 0%, #1b1106 80%);
+        color: #f5e4c3;
+        overflow: hidden;
+        user-select: none;
+      }
+      .container {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        height: 100%;
+        text-align: center;
+      }
+      h1 {
+        font-family: "Pirata One", cursive;
+        font-size: 3rem;
+        letter-spacing: 2px;
+        color: #f4d06f;
+        text-shadow: 0 0 12px #d8a000;
+        margin-bottom: 10px;
+      }
+      .display {
+        width: 320px;
+        height: 320px;
+        border: 6px solid #b97a00;
+        border-radius: 50%;
+        margin: 20px 0;
+        position: relative;
+        background: radial-gradient(circle at 50% 60%, #1c0f04 0%, #000 100%);
+        box-shadow: inset 0 0 40px rgba(255, 200, 100, 0.2);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 2rem;
+        transition: font-size 0.4s ease;
+      }
+      .display.big {
+        font-size: 6rem;
+        color: #ffd77e;
+        text-shadow: 0 0 25px #ffb700;
+        transform: scale(1.06);
+      }
+      .sand {
+        position: absolute;
+        top: 0;
+        width: 100%;
+        height: 100%;
+        background: conic-gradient(
+          from 180deg,
+          rgba(255, 223, 130, 0.5) 0%,
+          rgba(255, 223, 130, 0.1) 50%,
+          transparent 50%
+        );
+        mask: radial-gradient(circle, transparent 40%, black 41%);
+        border-radius: 50%;
+        transform-origin: center;
+        animation: rotate 3s linear infinite;
+        opacity: 0;
+        transition: opacity 0.5s;
+      }
+      @keyframes rotate {
+        from {
+          transform: rotate(0deg);
+        }
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      .btn {
+        background: linear-gradient(180deg, #f4d06f, #b97a00);
+        border: 2px solid #f1b84c;
+        padding: 12px 24px;
+        border-radius: 8px;
+        color: #1a0b00;
+        font-weight: bold;
+        cursor: pointer;
+        font-size: 1.2rem;
+        text-transform: uppercase;
+        margin: 10px;
+        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5);
+        transition: filter 0.2s;
+      }
+      .btn:hover:not(:disabled) {
+        filter: brightness(1.1);
+      }
+      .btn:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+        filter: grayscale(1);
+      }
+      .result {
+        font-size: 1.3rem;
+        margin-top: 15px;
+        color: #f9d87e;
+        text-shadow: 0 0 10px #7a5200;
+      }
+      .torch {
+        position: absolute;
+        width: 80px;
+        height: 120px;
+        background: radial-gradient(
+          ellipse at bottom,
+          rgba(255, 150, 0, 0.6),
+          transparent
+        );
+        animation: flicker 0.15s infinite alternate;
+        filter: blur(6px);
+        opacity: 0.6;
+      }
+      .torch.left {
+        left: 10%;
+        top: 10%;
+      }
+      .torch.right {
+        right: 10%;
+        top: 10%;
+      }
+      @keyframes flicker {
+        from {
+          opacity: 0.4;
+        }
+        to {
+          opacity: 0.8;
+        }
+      }
+      footer {
+        position: fixed;
+        left: 12px;
+        bottom: 10px;
+        color: #bfa86b;
+        font-size: 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="torch left"></div>
+    <div class="torch right"></div>
+
+    <div class="container">
+      <h1>Bort Foyard – Le Chronomètre Aveugle</h1>
+
+      <div class="display" id="display">
+        <div class="sand" id="sand"></div>
+        <span id="text">En attente…</span>
+      </div>
+
+      <div>
+        <button class="btn" id="startStop">Démarrer</button>
+        <button class="btn" id="reset">Réinitialiser</button>
+      </div>
+
+      <div class="result" id="result"></div>
+    </div>
+
+    <footer>
+      Raccourcis : <strong>Esp</strong> démarrer/arrêter •
+      <strong>R</strong> réinitialiser
+    </footer>
+
+    <script>
+      let running = false,
+        startTime = 0,
+        raf,
+        audioCtx = null,
+        lockTimer = null;
+      const display = document.getElementById("display");
+      const sand = document.getElementById("sand");
+      const text = document.getElementById("text");
+      const result = document.getElementById("result");
+      const startStop = document.getElementById("startStop");
+      const reset = document.getElementById("reset");
+
+      function format(ms) {
+        const t = Math.floor(ms / 1000),
+          m = Math.floor(t / 60),
+          s = t % 60,
+          c = Math.floor((ms % 1000) / 10);
+        return `${m}:${String(s).padStart(2, "0")}.${String(c).padStart(
+          2,
+          "0"
+        )}`;
+      }
+      function playStartSound() {
+        try {
+          if (!audioCtx)
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+          const c = audioCtx,
+            o = c.createOscillator(),
+            g = c.createGain();
+          o.type = "sine";
+          o.frequency.value = 440;
+          o.connect(g);
+          g.connect(c.destination);
+          g.gain.setValueAtTime(0.0001, c.currentTime);
+          g.gain.exponentialRampToValueAtTime(0.2, c.currentTime + 0.01);
+          g.gain.exponentialRampToValueAtTime(0.0001, c.currentTime + 0.35);
+          o.start();
+          o.stop(c.currentTime + 0.36);
+        } catch {}
+      }
+      function playTigerRoar() {
+        try {
+          if (!audioCtx)
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+          const c = audioCtx,
+            now = c.currentTime,
+            dur = 1.2,
+            bufSize = c.sampleRate * dur,
+            b = c.createBuffer(1, bufSize, c.sampleRate),
+            d = b.getChannelData(0);
+          for (let i = 0; i < bufSize; i++)
+            d[i] =
+              (Math.random() * 2 - 1) *
+              (1 - i / bufSize) *
+              (0.9 - 0.6 * Math.random());
+          const noise = c.createBufferSource();
+          noise.buffer = b;
+          const bp = c.createBiquadFilter();
+          bp.type = "bandpass";
+          bp.frequency.value = 400;
+          bp.Q.value = 1;
+          const lfo = c.createOscillator();
+          lfo.type = "sawtooth";
+          lfo.frequency.value = 50;
+          const lfoG = c.createGain();
+          lfoG.gain.value = 100;
+          const car = c.createOscillator();
+          car.type = "sawtooth";
+          car.frequency.value = 60;
+          const carG = c.createGain();
+          carG.gain.setValueAtTime(0.0001, now);
+          const dist = c.createWaveShaper();
+          const makeD = (a) => {
+            const k = a || 30,
+              n = 44100,
+              cv = new Float32Array(n),
+              deg = Math.PI / 180;
+            for (let i = 0; i < n; i++) {
+              const x = (i * 2) / n - 1;
+              cv[i] = ((3 + k) * x * 20 * deg) / (Math.PI + k * Math.abs(x));
+            }
+            return cv;
+          };
+          dist.curve = makeD(30);
+          dist.oversample = "4x";
+          const master = c.createGain();
+          master.gain.value = 0.0001;
+          noise.connect(bp);
+          bp.connect(dist);
+          car.connect(carG);
+          carG.connect(dist);
+          lfo.connect(lfoG);
+          lfoG.connect(car.frequency);
+          dist.connect(master);
+          master.connect(c.destination);
+          master.gain.exponentialRampToValueAtTime(0.9, now + 0.06);
+          master.gain.exponentialRampToValueAtTime(0.001, now + dur);
+          carG.gain.exponentialRampToValueAtTime(0.6, now + 0.05);
+          carG.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+          bp.frequency.setValueAtTime(300, now);
+          bp.frequency.exponentialRampToValueAtTime(900, now + 0.12);
+          bp.frequency.exponentialRampToValueAtTime(220, now + dur);
+          lfo.frequency.setValueAtTime(60, now);
+          lfo.frequency.exponentialRampToValueAtTime(28, now + 0.18);
+          noise.start(now);
+          car.start(now);
+          lfo.start(now);
+          noise.stop(now + dur + 0.02);
+          car.stop(now + dur + 0.02);
+          lfo.stop(now + dur + 0.02);
+        } catch (e) {
+          console.warn("Roar fail", e);
+        }
+      }
+      function startChrono() {
+        running = true;
+        startTime = performance.now();
+        sand.style.opacity = 1;
+        text.textContent = "Le temps s’écoule…";
+        display.classList.remove("big");
+        result.textContent = "";
+        startStop.textContent = "Arrêter";
+        playStartSound();
+        tick();
+      }
+      function stopChrono() {
+        running = false;
+        cancelAnimationFrame(raf);
+        sand.style.opacity = 0;
+        const elapsed = performance.now() - startTime;
+        text.textContent = format(elapsed);
+        display.classList.add("big");
+        result.textContent = "Le sablier est vide ! 🐅";
+        startStop.textContent = "Démarrer";
+        playTigerRoar();
+        lockButton();
+      }
+      function lockButton() {
+        startStop.disabled = true;
+        let sec = 15;
+        result.textContent = `Repos du sablier… (${sec}s)`;
+        lockTimer = setInterval(() => {
+          sec--;
+          if (sec > 0) {
+            result.textContent = `Repos du sablier… (${sec}s)`;
+          } else {
+            clearInterval(lockTimer);
+            startStop.disabled = false;
+            result.textContent = "Le sablier est prêt à nouveau.";
+          }
+        }, 1000);
+      }
+      function tick() {
+        if (!running) return;
+        text.style.opacity = Math.floor(performance.now() / 500) % 2 ? 1 : 0.7;
+        raf = requestAnimationFrame(tick);
+      }
+      startStop.addEventListener("click", () => {
+        if (!running) startChrono();
+        else stopChrono();
+      });
+      reset.addEventListener("click", () => {
+        cancelAnimationFrame(raf);
+        running = false;
+        sand.style.opacity = 0;
+        display.classList.remove("big");
+        text.textContent = "En attente…";
+        result.textContent = "";
+        startStop.textContent = "Démarrer";
+      });
+      window.addEventListener("keydown", (e) => {
+        // only if not locked
+        if (startStop.disabled) return;
+        if (e.code === "Space") {
+          e.preventDefault();
+          if (!running) startChrono();
+          else stopChrono();
+        }
+        if (e.key.toLowerCase() === "r") {
+          reset.click();
+        }
+      });
+    </script>
+  </body>
+</html>
